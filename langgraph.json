@@ -1,0 +1,11 @@
+{
+  "dockerfile_lines": [],
+  "graphs": {
+    "design_intent_scope": "./src/cad_agent_from_scratch/design_intent_workflow.py:design_intent_workflow"
+  },
+  "python_version": "3.11",
+  "env": ".env",
+  "dependencies": [
+    "."
+  ]
+}
