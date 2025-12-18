@@ -1,4 +1,20 @@
-# ===== CLARIFY DESIGN INTENT PROMPT =====
+"""
+Prompt templates for the Agentic CAD Generation system.
+
+This module contains all prompt templates used across the CAD workflow,
+including:
+- Design intention clarification
+- Design intent parsing
+- Evaluation and hallucination checks
+
+IMPORTANT:
+All prompts are structured-output safe.
+NO raw JSON objects are shown in prompts.
+"""
+
+# =============================================================================
+# DESIGN INTENT CLARIFICATION PROMPT
+# =============================================================================
 
 clarify_design_intent_instructions = """
 These are the messages exchanged so far between the user and the CAD assistant:
@@ -7,100 +23,103 @@ These are the messages exchanged so far between the user and the CAD assistant:
 {messages}
 </Messages>
 
-Your task is to determine whether the current design request contains
-SUFFICIENT information to BEGIN CAD model generation.
+Your task is to determine whether the user's design request is sufficiently
+specified to BEGIN coarse CAD model generation.
 
-IMPORTANT:
-Your goal is NOT to fully specify the design.
-Your goal is to collect enough information to safely hand off to the next CAD agent.
+IMPORTANT GOAL:
+You are NOT completing the design.
+You are ONLY deciding whether enough information exists to safely proceed.
 
-A design intent is considered SUFFICIENT if:
-- The object type is clear
-- The overall size is approximately defined
-- The major configuration/style is defined
-- The model is static or movable
-- Major components are identified
+A design request is considered SUFFICIENT if:
+- The object type is clear (e.g., cube, airplane, bracket)
+- Approximate size or scale is known (explicit or implicit)
+- High-level configuration or style is defined
+- It is clear whether the model is static or movable
+- Major components are identified (if applicable)
 
-Do NOT attempt to refine:
-- Detailed proportions (e.g., chord length, airfoil shape)
-- Manufacturing tolerances
-- Secondary or cosmetic details
+You MUST NOT attempt to:
+- Refine detailed proportions
+- Infer precise dimensions
+- Add cosmetic or aesthetic assumptions
 
 --------------------------------------------------
 CLARIFICATION STRATEGY
 --------------------------------------------------
 
 If clarification is required:
-- Ask MULTIPLE related questions in a SINGLE message.
-- Group questions logically.
-- Limit to ONLY the most critical missing information.
-- Prefer ranges or approximate values.
+- Ask MULTIPLE related questions in ONE message
+- Group questions logically
+- Focus ONLY on blocking information
+- Prefer approximate values or ranges
+- Do NOT repeat already-answered questions
 
-Aim to finish clarification within 3–5 turns.
-If some information is still missing after that, STOP asking questions
-and proceed with reasonable assumptions.
-
---------------------------------------------------
-WHEN TO STOP ASKING QUESTIONS
---------------------------------------------------
-
-You MUST stop asking questions and proceed if:
-- Only secondary details remain, OR
-- Remaining unknowns will not block coarse CAD generation
+Stop asking questions if:
+- Only secondary details remain
+- Remaining uncertainty does not block coarse CAD generation
 
 --------------------------------------------------
-RESPONSE FORMAT (STRICT)
+RESPONSE INSTRUCTIONS
 --------------------------------------------------
 
-Respond in valid JSON with EXACTLY these keys:
+Return values for the following fields ONLY:
+- need_clarification
+- question
+- summary
 
-- "need_clarification": boolean
-- "question": string
-- "summary": string
+Rules:
+- need_clarification must be true or false
+- question must contain clarification questions if needed, otherwise empty
+- summary must contain the finalized design intent if sufficient, otherwise empty
 
-If clarification is required, return:
-{
-  "need_clarification": true,
-  "question": "<batched clarification questions>",
-  "summary": ""
-}
-
-If no clarification is required, return:
-{
-  "need_clarification": false,
-  "question": "",
-  "summary": "<finalized design intent including assumptions>"
-}
+Do NOT include explanations outside these fields.
 """
 
-
-# ===== PARSER PROMPT =====
+# =============================================================================
+# DESIGN INTENT PARSING PROMPT
+# =============================================================================
 
 PARSE_DESIGN_INTENT_PROMPT = """
 You are a CAD design assistant.
 
-The following text is a finalized and clarified CAD design intent:
+The text below represents a FINALIZED and CLARIFIED CAD design intent:
 
 <DesignIntent>
 {design_intent}
 </DesignIntent>
 
-Extract all explicitly stated design information into a structured format.
+Your task is to extract ONLY information that is explicitly stated.
 
-Rules:
-- Do NOT invent dimensions or components.
-- If information is not present, leave the field null.
-- Preserve units exactly as written.
-- Assumptions must be explicitly stated as assumptions.
+Extraction rules:
+- Do NOT invent geometry, dimensions, or components
+- If information is missing, leave the field empty
+- Preserve units exactly as written
+- Any assumptions must be explicitly listed as assumptions
 
-Return valid JSON that matches the required schema exactly.
+Populate the following fields:
+- object_name
+- components
+- dimensions
+- configuration
+- assumptions
+
+Return ONLY structured field values.
+Do NOT add commentary or explanations.
 """
+
+# =============================================================================
+# CAD CRITERIA EVALUATION PROMPT
+# =============================================================================
 
 CAD_CRITERIA_PROMPT = """
 You are a CAD design intent evaluator.
 
-Your task is to determine whether the parsed CAD design intent
-captures the specific design criterion provided.
+Your task is to determine whether the parsed design intent
+captures the given criterion.
+
+IMPORTANT:
+- Not all criteria apply to all objects.
+- Missing fields are acceptable if the criterion is not applicable.
+- Do NOT penalize the design intent for being unrelated.
 
 Criterion:
 {criterion}
@@ -108,27 +127,56 @@ Criterion:
 Parsed Design Intent:
 {parsed_intent}
 
-Judgment rules:
-- CAPTURED if the criterion is explicitly present or clearly implied
-- NOT CAPTURED if missing, vague, or contradicted
-- Do NOT infer dimensions or components that are not present
+Evaluation rules:
+1. CAPTURED:
+   - The criterion is explicitly present, OR
+   - The criterion is clearly implied by the parsed intent
 
-Respond in structured form.
+2. NOT CAPTURED:
+   - The criterion is relevant but missing, OR
+   - The criterion contradicts the parsed intent
+
+3. NOT APPLICABLE (treat as NOT CAPTURED):
+   - The criterion does not apply to the object type
+   - Example: airplane criteria for a cube
+
+Reasoning guidelines:
+- First identify the object type
+- Decide whether the criterion applies
+- Then decide capture status
+- Never blame the parser
+
+Return:
+- is_captured: true or false
+- reasoning: concise, CAD-grounded explanation
 """
+
+
+# =============================================================================
+# CAD HALLUCINATION CHECK PROMPT
+# =============================================================================
 
 CAD_HALLUCINATION_PROMPT = """
 You are a CAD design auditor.
 
-Check whether the parsed design intent introduces
-any geometry, dimensions, components, or configurations
-that were NOT explicitly stated by the user.
+Check whether the parsed design intent introduces ANY information
+not explicitly provided by the user.
 
 Parsed Design Intent:
 {parsed_intent}
 
-User Criteria:
+User-Provided Criteria:
 {success_criteria}
 
-PASS if no extra assumptions exist.
-FAIL if any unstated features are introduced.
+PASS if:
+- No unstated dimensions, geometry, or components are introduced
+- Any assumptions are explicitly labeled
+
+FAIL if:
+- New features, sizes, or configurations are invented
+- Design choices are narrowed beyond user input
+
+Return values for:
+- no_hallucination
+- reasoning
 """

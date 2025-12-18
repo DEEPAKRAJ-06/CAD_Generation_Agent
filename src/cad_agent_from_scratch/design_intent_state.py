@@ -1,28 +1,41 @@
 
-"""State Definitions and Pydantic Schemas for CAD Design Intention Clarification.
+"""
+State Definitions and Pydantic Schemas for CAD Design Intention Clarification.
 
 This module defines the state objects and structured schemas used for
 the design intention clarification step of an agentic CAD workflow.
 
-The state manages conversation context, evolving design intent,
-and parsed design parameters for downstream CAD agents.
+Responsibilities:
+- Define LangGraph state containers
+- Define structured LLM output schemas
+- NO workflow logic
 """
 
 from typing_extensions import Optional, Annotated, Sequence
+
 from langchain_core.messages import BaseMessage
 from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
+from cad_agent_from_scratch.logger import logging
 
-# ===== STATE DEFINITIONS =====
+# =============================================================================
+# MODULE INIT LOG
+# =============================================================================
+
+logging.info("Loaded design_intent_state module")
+
+# =============================================================================
+# STATE DEFINITIONS
+# =============================================================================
 
 class AgentInputState(MessagesState):
     """
     Input state for the CAD agent.
 
-    This state contains only the messages provided by the user
-    and serves as the entry point for the intention clarification workflow.
+    Contains only messages provided by the user.
+    Acts as the entry point for the design intent clarification workflow.
     """
     pass
 
@@ -31,27 +44,31 @@ class DesignIntentState(MessagesState):
     """
     Main state for the design intention clarification workflow.
 
-    Extends MessagesState with additional fields required to:
+    Extends MessagesState with fields to:
     - Track evolving design intent
-    - Decide whether further clarification is required
-    - Store the finalized design intent
-    - Store parsed design parameters for downstream agents
+    - Decide whether clarification is required
+    - Store finalized design intent
+    - Store parsed design parameters
     """
 
     # Human-readable, refined design intent summary
     design_intent: Optional[str]
 
-    # Structured representation of the design intent (output of parser node)
+    # Structured representation of the design intent (parser output)
     parsed_intent: Optional[dict]
 
-    # Whether the agent has determined that clarification is still required
+    # Whether further clarification is required
     needs_clarification: bool = True
 
     # Messages exchanged during the clarification loop
     clarification_messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
-# ===== STRUCTURED OUTPUT SCHEMAS =====
+logging.info("Registered DesignIntentState and AgentInputState")
+
+# =============================================================================
+# STRUCTURED OUTPUT SCHEMAS (LLM)
+# =============================================================================
 
 class ClarifyDesignIntent(BaseModel):
     """
@@ -60,24 +77,25 @@ class ClarifyDesignIntent(BaseModel):
     """
 
     need_clarification: bool = Field(
-        description="Whether the current design intent is underspecified for CAD generation.",
+        description="Whether the current design intent is underspecified for CAD generation."
     )
 
     question: str = Field(
-        description="A concise clarification question to ask the user if clarification is required.",
+        description="Clarification question(s) to ask the user if needed."
     )
 
     summary: str = Field(
-        description="A concise summary of the finalized design intent if sufficient information is available.",
+        description="Finalized design intent summary if sufficient information is available."
     )
 
-# ===== PARSER SCHEMA =====
 
 class ParsedDesignIntent(BaseModel):
-    """Structured representation of a clarified CAD design intent."""
+    """
+    Structured representation of a clarified CAD design intent.
+    """
 
     object_name: str = Field(
-        description="Name of the object being designed (e.g., airplane, bracket, gear)."
+        description="Name of the object being designed (e.g., cube, airplane, bracket)."
     )
 
     components: Optional[list[str]] = Field(
@@ -89,9 +107,12 @@ class ParsedDesignIntent(BaseModel):
     )
 
     configuration: Optional[str] = Field(
-        description="High-level configuration or style (e.g., T-tail, angular body)."
+        description="High-level configuration or style (e.g., solid, hollow, T-tail)."
     )
 
     assumptions: Optional[list[str]] = Field(
         description="Explicit assumptions made due to missing information."
     )
+
+
+logging.info("Registered ClarifyDesignIntent and ParsedDesignIntent schemas")
