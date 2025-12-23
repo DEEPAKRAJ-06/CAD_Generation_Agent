@@ -51,16 +51,9 @@ class DesignIntentState(MessagesState):
     - Store parsed design parameters
     """
 
-    # Human-readable, refined design intent summary
     design_intent: Optional[str]
-
-    # Structured representation of the design intent (parser output)
     parsed_intent: Optional[dict]
-
-    # Whether further clarification is required
     needs_clarification: bool = True
-
-    # Messages exchanged during the clarification loop
     clarification_messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
@@ -79,11 +72,9 @@ class ClarifyDesignIntent(BaseModel):
     need_clarification: bool = Field(
         description="Whether the current design intent is underspecified for CAD generation."
     )
-
     question: str = Field(
         description="Clarification question(s) to ask the user if needed."
     )
-
     summary: str = Field(
         description="Finalized design intent summary if sufficient information is available."
     )
@@ -92,6 +83,13 @@ class ClarifyDesignIntent(BaseModel):
 class ParsedDesignIntent(BaseModel):
     """
     Structured representation of a clarified CAD design intent.
+
+    IMPORTANT SEMANTIC RULE:
+    - If the object is atomic (e.g., cube, sphere, rod) and no sub-components
+      are explicitly mentioned, `components` MUST contain a single item equal
+      to `object_name` (e.g., ["cube"]).
+    - `components` being empty or None must NEVER be interpreted as
+      "no object exists".
     """
 
     object_name: str = Field(
@@ -99,7 +97,11 @@ class ParsedDesignIntent(BaseModel):
     )
 
     components: Optional[list[str]] = Field(
-        description="Major components explicitly mentioned by the user."
+        description=(
+            "List of major components explicitly mentioned by the user. "
+            "For atomic objects, this MUST be a single-item list containing "
+            "the object_name."
+        )
     )
 
     dimensions: Optional[dict[str, str]] = Field(

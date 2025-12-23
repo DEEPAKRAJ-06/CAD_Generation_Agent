@@ -91,9 +91,11 @@ Your task is to extract ONLY information that is explicitly stated.
 
 Extraction rules:
 - Do NOT invent geometry, dimensions, or components
-- If information is missing, leave the field empty
 - Preserve units exactly as written
 - Any assumptions must be explicitly listed as assumptions
+- If the object is atomic (e.g., cube, sphere, rod) and no components are
+  explicitly mentioned, populate `components` with a single-item list
+  containing the object_name
 
 Populate the following fields:
 - object_name
@@ -223,13 +225,43 @@ without introducing new components or assumptions.
 COMPONENT INTERPRETATION RULE (CRITICAL)
 --------------------------------------------------
 
-The presence of an object_name ALWAYS implies that an object exists
-and MUST be planned.
+The presence of an object_name ALWAYS means an object exists and MUST be planned.
 
-If components is empty or None:
-- This indicates a SINGLE-COMPONENT (atomic) object
-- It does NOT mean that no object exists
-- You MUST still produce a design plan for the object described by object_name
+Interpret components as follows:
+
+- If components is a list containing exactly one item equal to object_name
+  (e.g., ["cube"] for object_name = "cube"):
+  → This represents a SINGLE atomic object
+  → You MUST generate a design plan for that object
+
+- If components contains multiple items:
+  → Treat them as distinct components of an assembly
+
+- Under NO circumstances should you state that
+  "no components are specified" when object_name is present
+
+Producing a design plan is MANDATORY whenever object_name is present.
+
+--------------------------------------------------
+AUTHORITY & PRECEDENCE RULE (CRITICAL)
+--------------------------------------------------
+
+The Parsed Design Intent is the AUTHORITATIVE source of truth.
+
+You MUST use `parsed_intent` to determine:
+- Whether an object exists
+- Whether components exist
+- Whether the object is atomic or multi-component
+
+If there is any ambiguity, omission, or lack of explicit component wording
+in the natural-language Design Intent, you MUST resolve it using
+`parsed_intent`.
+
+You are STRICTLY FORBIDDEN from concluding that
+"no components are specified" if `parsed_intent.object_name` is present.
+
+When `parsed_intent.components` contains one item equal to `object_name`,
+this ALWAYS represents a valid single-component object.
 
 --------------------------------------------------
 OBJECT TYPE CONSTRAINT (CRITICAL)
