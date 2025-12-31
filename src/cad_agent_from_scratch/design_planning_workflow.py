@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.types import interrupt
+from langgraph.types import interrupt, Command
 
 from cad_agent_from_scratch.prompts import PLAN_DESIGN_INTENT_PROMPT
 from cad_agent_from_scratch.design_planning_state import PlanningAgentState
@@ -73,15 +73,21 @@ def hitl_review(state: PlanningAgentState):
 
     result = interrupt([request])[0]
 
+    # ✅ ACCEPT → terminate
     if result["type"] == "accept":
-        return END
+        return Command(goto=END)
 
+    # ✅ EDIT → store feedback AND loop back
     if result["type"] == "edit":
-        return {
-            "human_feedback": result["args"],
-        }
+        return Command(
+            goto="generate_plan",
+            update={
+                "human_feedback": result["args"]
+            }
+        )
 
-    return END
+    # ✅ IGNORE → terminate
+    return Command(goto=END)
 
 
 # ---------------- GRAPH ---------------- #

@@ -14,6 +14,9 @@ dependencies = [
     "langchain-anthropic>=1.0.0",
     "langchain-community>=0.4",
 
+    # MCP adapter layer
+    "langchain-mcp-adapters>=0.1.0",
+
     # State / intent modeling
     "pydantic>=2.0.0",
 
@@ -26,6 +29,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+
+# 🔑 MCP stack (OpenSCAD execution + stdio client)
+mcp = [
+    "fastmcp>=0.4.0",          # MCP server runner
+    "mcp>=0.1.0",              # MCP Python client
+    "pywin32; platform_system == 'Windows'",  # Required for stdio on Windows
+]
+
+# Dev / tooling
 dev = [
     "mypy>=1.11.1",
     "ruff>=0.6.1",

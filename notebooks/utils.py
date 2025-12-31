@@ -3,6 +3,7 @@ from rich.panel import Panel
 from rich.text import Text
 import json
 
+
 console = Console()
 
 def format_message_content(message):
@@ -79,3 +80,5 @@ def show_prompt(prompt_text: str, title: str = "Prompt", border_style: str = "bl
         border_style=border_style,
         padding=(1, 2)
     ))
+
+
