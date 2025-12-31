@@ -33,7 +33,7 @@ from cad_agent_from_scratch.exception import CustomException
 # MODEL CONFIGURATION
 # =============================================================================
 
-evaluator_model = init_chat_model(model="gpt-4.1")
+evaluator_model = init_chat_model(model="gpt-4o")
 logging.info("Initialized MCP evaluator model (HTTP mode)")
 
 # =============================================================================
