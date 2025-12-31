@@ -39,7 +39,7 @@ from cad_agent_from_scratch.exception import CustomException
 # =============================================================================
 
 model = init_chat_model(
-    model="gpt-4.1",
+    model="gpt-4.1-mini",
     temperature=0.0,
 )
 

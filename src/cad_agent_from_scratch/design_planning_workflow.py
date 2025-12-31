@@ -1,126 +1,98 @@
 
 """
-Design Planning Workflow (CAD).
+CAD Planning Sub-Agent (TypedDict-based).
 
-This module implements Step-2 of the agentic CAD workflow:
-1. Generate a high-level, human-readable design plan
-2. Present the plan for human approval
-3. Loop until approval is granted
-
-Architecture mirrors design_intent_workflow and deep_research scoping patterns.
+Mirrors deep_research/research_agent.py exactly.
 """
 
-from typing_extensions import Literal
-import sys
+from pydantic import BaseModel, Field
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.types import Command
+from langgraph.types import interrupt
 
-from cad_agent_from_scratch.design_planning_state import (
-    DesignPlanningState,
-    PlanDesignIntent,
-)
+from cad_agent_from_scratch.prompts import PLAN_DESIGN_INTENT_PROMPT
+from cad_agent_from_scratch.design_planning_state import PlanningAgentState
 
-from cad_agent_from_scratch.prompts import (
-    PLAN_DESIGN_INTENT_PROMPT,
-)
 
-from cad_agent_from_scratch.logger import logging
-from cad_agent_from_scratch.exception import CustomException
-
-# =============================================================================
-# MODEL CONFIGURATION
-# =============================================================================
+# ---------------- MODEL ---------------- #
 
 model = init_chat_model(
     model="gpt-4.1-mini",
     temperature=0.0,
 )
 
-logging.info("Initialized CAD design planning workflow model")
 
-# =============================================================================
-# WORKFLOW NODES
-# =============================================================================
+# ---------------- SCHEMA ---------------- #
 
-def generate_design_plan(
-    state: DesignPlanningState,
-) -> Command[Literal["check_human_approval"]]:
-    """
-    Generate a high-level CAD design plan from clarified intent.
-    """
+class PlanDesignIntent(BaseModel):
+    design_plan: str = Field(...)
+    ready_for_review: bool = Field(...)
 
-    logging.info("Entered node: generate_design_plan")
 
-    design_intent = state.get("design_intent")
-    parsed_intent = state.get("parsed_intent")
-    human_feedback = state.get("human_feedback")
+# ---------------- NODES ---------------- #
 
-    try:
-        structured_model = model.with_structured_output(PlanDesignIntent)
+def generate_plan(state: PlanningAgentState):
+    # Safety guard against infinite loops
+    if state.get("iterations", 0) >= 5:
+        return END
 
-        prompt_text = PLAN_DESIGN_INTENT_PROMPT.format(
-            design_intent=design_intent,
-            parsed_intent=parsed_intent,
-            human_feedback=human_feedback or "None"
-        )
+    structured_model = model.with_structured_output(PlanDesignIntent)
 
-        logging.debug(f"Planning prompt:\n{prompt_text}")
-
-        response = structured_model.invoke(
-            [HumanMessage(content=prompt_text)]
-        )
-
-        logging.info("Design plan generated successfully")
-        logging.debug(f"Planning response object: {response}")
-
-    except Exception as e:
-        logging.exception("Error during generate_design_plan LLM call")
-        raise CustomException(e, sys)
-
-    return Command(
-        goto="check_human_approval",
-        update={
-            "design_plan": response.design_plan,
-            "plan_messages": [AIMessage(content=response.design_plan)],
-        },
+    prompt = PLAN_DESIGN_INTENT_PROMPT.format(
+        design_intent=state["design_intent"],
+        parsed_intent=state["parsed_intent"],
+        human_feedback=state.get("human_feedback") or "None",
     )
 
+    response = structured_model.invoke(
+        [HumanMessage(content=prompt)]
+    )
 
-def check_human_approval(
-    state: DesignPlanningState,
-) -> Command[Literal["generate_design_plan", "__end__"]]:
-    """
-    Decide whether to proceed or refine the design plan based on human approval.
-    """
+    return {
+        "design_plan": response.design_plan,
+        "planner_messages": [AIMessage(content=response.design_plan)],
+        "iterations": state.get("iterations", 0) + 1,
+    }
 
-    logging.info("Entered node: check_human_approval")
 
-    approved = state.get("human_approved", False)
+def hitl_review(state: PlanningAgentState):
+    request = {
+        "action_request": {
+            "action": "Review CAD Design Plan",
+            "args": {},
+        },
+        "config": {
+            "allow_accept": True,
+            "allow_edit": True,
+            "allow_ignore": True,
+        },
+        "description": state["design_plan"],
+    }
 
-    if approved:
-        logging.info("Human approved the design plan — exiting planning workflow")
-        return Command(goto=END)
+    result = interrupt([request])[0]
 
-    logging.info("Design plan not approved — looping back to planner")
-    return Command(goto="generate_design_plan")
+    if result["type"] == "accept":
+        return END
 
-# =============================================================================
-# GRAPH CONSTRUCTION
-# =============================================================================
+    if result["type"] == "edit":
+        return {
+            "human_feedback": result["args"],
+        }
 
-logging.info("Building LangGraph for design planning workflow")
+    return END
 
-builder = StateGraph(DesignPlanningState)
 
-builder.add_node("generate_design_plan", generate_design_plan)
-builder.add_node("check_human_approval", check_human_approval)
+# ---------------- GRAPH ---------------- #
 
-builder.add_edge(START, "generate_design_plan")
-builder.add_edge("generate_design_plan", "check_human_approval")
+planning_builder = StateGraph(PlanningAgentState)
 
-design_planning_workflow = builder.compile()
+planning_builder.add_node("generate_plan", generate_plan)
+planning_builder.add_node("hitl_review", hitl_review)
 
-logging.info("Design planning workflow compiled successfully")
+planning_builder.add_edge(START, "generate_plan")
+planning_builder.add_edge("generate_plan", "hitl_review")
+planning_builder.add_edge("hitl_review", "generate_plan")
+
+planning_agent = planning_builder.compile()
