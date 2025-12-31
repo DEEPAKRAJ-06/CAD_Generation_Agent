@@ -5,9 +5,9 @@ MCP Execution + Evaluator Workflow (HTTP-based, Windows-safe)
 Responsibilities:
 - Connect to a RUNNING OpenSCAD MCP server over HTTP
 - Execute OpenSCAD code via MCP tools
-- Robustly extract render image (base64) from MCP tool output
+- Robustly extract render image (base64)
 - Export STL
-- Evaluate semantic + visual correctness using a multimodal LLM
+- Evaluate semantic + visual correctness
 """
 
 import sys
@@ -53,39 +53,27 @@ def get_mcp_client() -> MultiServerMCPClient:
 
 
 # =============================================================================
-# NORMALIZE MCP RENDER OUTPUT  ✅ FIXED
+# NORMALIZE MCP RENDER OUTPUT
 # =============================================================================
 
 def extract_base64_image(render_result) -> str:
-    """
-    Normalize MCP render output to raw base64 image.
-    Compatible with FastMCP + your OpenSCAD server.
-    """
-
-    # Step 1: unwrap list
     if isinstance(render_result, list):
         if not render_result:
             raise RuntimeError("Empty render result from MCP")
         render_result = render_result[0]
 
-    # Step 2: unwrap dict (FastMCP tool response)
     if isinstance(render_result, dict):
         if "text" in render_result:
             render_result = render_result["text"]
         else:
             raise RuntimeError(f"Unexpected render dict: {render_result}")
 
-    # Step 3: must be string now
     if not isinstance(render_result, str):
-        raise RuntimeError(
-            f"Unsupported render output type: {type(render_result)}"
-        )
+        raise RuntimeError(f"Unsupported render output type: {type(render_result)}")
 
-    # Step 4: must be data URL
     if not render_result.startswith("data:image/png;base64,"):
         raise RuntimeError(f"Render failed: {render_result[:200]}")
 
-    # Step 5: strip prefix
     return render_result.split(",", 1)[1]
 
 
@@ -102,23 +90,19 @@ async def run_openscad_mcp(
         tools = await client.get_tools()
         tools_by_name = {tool.name: tool for tool in tools}
 
-        # 1. Write OpenSCAD script
         await tools_by_name["create_openscad_script"].ainvoke(
             {"script_content": state["openscad_code"]}
         )
 
-        # 2. Save script
         await tools_by_name["save_openscad_script"].ainvoke(
             {"filename": "model.scad"}
         )
 
-        # 3. Render image
         raw_render = await tools_by_name["view_render"].ainvoke(
             {"view": "isometric"}
         )
         render_image = extract_base64_image(raw_render)
 
-        # 4. Export STL
         raw_stl = await tools_by_name["export_model_to_stl"].ainvoke(
             {"filename": "model"}
         )
@@ -145,7 +129,7 @@ async def run_openscad_mcp(
 
 
 # =============================================================================
-# EVALUATOR NODE (MULTIMODAL)
+# EVALUATOR NODE (PLAN + CODE + IMAGE)
 # =============================================================================
 
 async def evaluator(
@@ -158,16 +142,26 @@ async def evaluator(
     messages = [
         SystemMessage(
             content=(
-                "You are a CAD evaluator.\n"
-                "You MUST analyze the provided render image.\n"
-                "Describe the geometry and conclude PASS or FAIL."
+                "You are a CAD evaluator.\n\n"
+                "You MUST compare THREE things:\n"
+                "1. DESIGN PLAN (ground truth)\n"
+                "2. OpenSCAD code\n"
+                "3. Rendered image\n\n"
+                "Rules:\n"
+                "- FAIL if any dimension deviates from the plan\n"
+                "- FAIL if proportions do not match\n"
+                "- PASS only if plan, code, and image all agree\n\n"
+                "Be strict."
             )
         ),
         HumanMessage(
             content=[
                 {
                     "type": "text",
-                    "text": f"OpenSCAD Code:\n{state['openscad_code']}",
+                    "text": (
+                        f"DESIGN PLAN:\n{state['design_plan']}\n\n"
+                        f"OPENSCAD CODE:\n{state['openscad_code']}"
+                    ),
                 },
                 {
                     "type": "image_url",
